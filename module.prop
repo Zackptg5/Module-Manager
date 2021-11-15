@@ -1,0 +1,6 @@
+id=module_manager
+name=Module Manager
+version=v1.0
+versionCode=1
+author=Zackptg5
+description=Terminal script to manage your magisk modules

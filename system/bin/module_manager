@@ -1,0 +1,191 @@
+#!/system/bin/sh
+# Terminal Magisk Mod Template
+# by veez21 @ xda-developers
+
+# Setup kill switch
+trap "exit 0" 10
+proc="$$"
+
+# Magisk Module ID **
+ID="module_manager"
+
+# Detect root
+_name=$(basename $0)
+ls /data >/dev/null 2>&1 || { echo "$ID needs to run as root!"; echo "type 'su' then '$_name'"; exit 1; }
+
+# Magisk Mod Directory
+MOUNTPATH="/data/adb/modules"
+MODDIR="$MOUNTPATH/$ID"
+[ ! -d $MODDIR ] && { echo "Module not detected!"; exit 1; }
+
+# Set path to your busybox if applicable
+_bb=$MODDIR/busybox
+alias zip=$MODDIR/zip
+
+# Load mod-util.sh
+. $MODDIR/mod-util.sh || exit $?
+
+# Set Log Files
+mount -o remount,rw /cache 2>/dev/null
+mount -o rw,remount /cache 2>/dev/null
+# > Logs should go in this file
+LOG=/data/local/tmp/$ID.log
+oldLOG=/data/local/tmp/$ID-old.log
+# > Verbose output goes here
+VERLOG=/data/local/tmp/$ID-verbose.log
+oldVERLOG=/data/local/tmp/$ID-verbose-old.log
+stdoutLOG=$MODDIR/logs/$ID-STDOUT.log
+oldstdoutLOG=$MODDIR/logs/$ID-STDOUT-old.log
+
+# Start Logging verbosely
+mv -f $VERLOG $oldVERLOG 2>/dev/null; mv -f $LOG $oldLOG 2>/dev/null; mv -f $stdoutLOG $oldstdoutLOG 2>/dev/null
+# exec 3>&1
+# exec 1>$stdoutLOG
+set -x 2>$VERLOG
+
+# Main
+# > You can start your MOD here.
+# > You can add functions, variables & etc.
+# > Rather than editing the default vars above.
+quit() {
+  rm -f $MODDIR/tmp*
+  kill -10 $proc
+  exit 0
+}
+
+mag_repo(){
+  echo "Generating list..."
+  find $MOUNTPATH -mindepth 2 -maxdepth 2 -type f -name module_manager | cut -d / -f5 > $MODDIR/tmpm
+  wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' > $MODDIR/tmpmi
+  wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100&page=2" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' >> $MODDIR/tmpmi
+  while read -r line; do
+    sed -i "/$line/d" $MODDIR/tmpmi
+  done < $MODDIR/tmpm
+  awk '{print NR  ": " $s}' $MODDIR/tmpmi > $MODDIR/tmpm
+  sed -i "1i0: None, go back to main menu" $MODDIR/tmpm
+  rm -f $MODDIR/tmpmi
+  echo "$div"
+  echo -e "Which module do you want to install?\n"
+  cat $MODDIR/tmpm
+  while true; do
+    read -r ichoice?'--> '
+    echo " "
+    case $ichoice in
+      0) return 1;;
+      q) quit;;
+      *) [ "$(grep -w "$ichoice:" $MODDIR/tmpm 2>/dev/null)" ] && { export choice="https://github.com/Magisk-Modules-Repo/$(grep -w "$ichoice:" $MODDIR/tmpm | awk '{print $2}')/archive/master.zip"; return 0; } || echo "Invalid option: $ichoice! Try again";;
+    esac
+  done
+}
+
+install_module(){
+  local OPATH=$PWD ZIPFILE=$MODDIR/tmp.zip modname update
+  if [ "$1" ]; then
+    update=true
+    modname=$2
+    echo "$1" > $MODDIR/tmpi
+    wget --no-check-certificate -qO $ZIPFILE "$1/archive/master.zip" 2>/dev/null
+  else
+    update=false
+    echo "$div"
+    echo "Type 'repo' if installing from Magisk Modules Repo"
+    echo "Otherwise, paste the Module's Github URL"
+    echo "Type 'c' to cancel"
+    while true; do
+      read -r choice?'--> '
+      echo " "
+      case $choice in
+        c) return 0;;
+        q) quit;;
+        "repo") if mag_repo; then
+                  rm -f $MODDIR/tmpm
+                  echo "$(echo $choice | sed 's|/archive/master.zip||')" > $MODDIR/tmpi
+                  break
+                fi;;
+        "https://github.com/"*|"https://www.github.com/"*) echo "$(echo $choice | sed 's|/$||')" > $MODDIR/tmpi; choice="$choice/archive/master.zip"
+                                                           wget --no-check-certificate -q --spider $choice 2>/dev/null && break || echo "URL doesn't exist! Try again";;
+        *) echo "Invalid option! Try again";;
+      esac
+    done
+    wget --no-check-certificate -qO $ZIPFILE $choice 2>/dev/null
+    modname="$(unzip -ql $ZIPFILE | awk '{print $4}' | head -n3 | tail -n1 | rev | cut -d- -f2- | rev)"
+  fi
+
+  $update && echo "$div\nUpdating $modname...\n" || echo "$div\nInstalling $modname...\n"
+
+  # Repack into normal magisk module zip
+  unzip -q $ZIPFILE -d $MODDIR
+  rm -f $ZIPFILE
+  cd $MODDIR/$modname-master
+  zip -0 -r -x ".git*" -q $ZIPFILE .
+  cd $OPATH
+  rm -rf $MODDIR/$modname-master
+  
+  # Install mod
+  magisk --install-module $ZIPFILE
+  rm -f $ZIPFILE
+  mv -f $MODDIR/tmpi $MOUNTPATH\_update/$modname/module_manager
+  $update && echo -e "\n$div\n$modname updated!" || echo -e "\n$div\n$modname installed!"
+}
+
+update_check() {
+  clear
+  while true; do
+    echo -e "0: None, go back to main menu\n1: All list modules" > $MODDIR/tmpu
+    ls $MOUNTPATH/*/module_manager 2>/dev/null | rev | cut -d / -f2 | rev | awk '{print FNR + 1 ": " $1 " " $2}' >> $MODDIR/tmpu
+    echo "$div"
+    echo "Update which module?"
+    echo "$div"
+    cat $MODDIR/tmpu
+    while true; do
+      read -r choice?'--> '
+      echo " "
+      for i in $choice; do
+        case $i in
+          0) break 3;;
+          1) choice="$(awk '{print $1}' $MODDIR/tmpu | sed -E -e '/^0:|^1:/d' -e 's/://' | tr '\n' ' ')"; break 2;;
+          q) quit;;
+          *) [ "$(grep -w "$i:" $MODDIR/tmpu 2>/dev/null)" ] && break 2 || echo "Invalid option: $i! Try again";;
+        esac
+      done
+    done
+    for ichoice in $choice; do
+      local mod="$(grep -w "$ichoice:" $MODDIR/tmpu | awk '{print $2}')"
+      local modurl="$(cat $MOUNTPATH/$mod/module_manager)"
+      wget --no-check-certificate -qO $MODDIR/tmpmrop $modurl/raw/master/module.prop 2>/dev/null
+      local new="$(grep_prop versionCode $MODDIR/tmpmrop)" old="$(grep_prop versionCode $MOUNTPATH/$mod/module.prop)"
+      rm -f $MODDIR/tmpmrop
+      if [ $new -gt $old ]; then
+        touch $MOUNTPATH/$mod/update
+        install_module "$modurl" "$mod"
+      else
+        echo -e "$mod is up to date\n"
+      fi
+    done
+  done
+  rm -f $MODDIR/tmpu
+  clear
+}
+
+mod_head
+test_connection || quit "No network connection! Aborting!"
+while true; do
+  echo "$div"
+  echo "Choose option:"
+  echo "$div"
+  echo "1: Check for Updates"
+  echo "2: Install Module"
+  echo "Type 'q' at any time to quit"
+  while true; do
+    read -r choice?'--> '
+    case $choice in
+      1|2) break;;
+      q) quit;;
+      *) echo "Invalid option! Try again";;
+    esac
+  done
+  case $choice in
+    1) update_check;;
+    2) install_module; clear;;
+  esac
+done
