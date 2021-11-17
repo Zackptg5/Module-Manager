@@ -18,3 +18,5 @@ module_manager
   * Bug fix for self-updating module manager
   * Allow updating of existing magisk repo modules without needing to reinstall through module manager
   
+### Support
+See [XDA Thread](https://forum.xda-developers.com/t/module-canary-module-manager.4362875)
