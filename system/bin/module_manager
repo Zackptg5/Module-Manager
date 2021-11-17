@@ -56,8 +56,7 @@ quit() {
 mag_repo(){
   echo "Generating list..."
   find $MOUNTPATH -mindepth 2 -maxdepth 2 -type f -name module_manager | cut -d / -f5 > $MODDIR/tmpm
-  wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' > $MODDIR/tmpmi
-  wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100&page=2" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' >> $MODDIR/tmpmi
+  cp -f $MODDIR/tmpr $MODDIR/tmpmi
   while read -r line; do
     sed -i "/$line/d" $MODDIR/tmpmi
   done < $MODDIR/tmpm
@@ -90,18 +89,14 @@ install_module(){
     echo "$div"
     echo "Type 'repo' if installing from Magisk Modules Repo"
     echo "Otherwise, paste the Module's Github URL"
-    echo "Type 'c' to cancel"
+    echo "Type '0' to go back to main menu"
     while true; do
       read -r choice?'--> '
       echo " "
       case $choice in
-        c) return 0;;
+        0) return 0;;
         q) quit;;
-        "repo") if mag_repo; then
-                  rm -f $MODDIR/tmpm
-                  echo "$(echo $choice | sed 's|/archive/master.zip||')" > $MODDIR/tmpi
-                  break
-                fi;;
+        "repo") mag_repo && { rm -f $MODDIR/tmpm; break; } || return 0;;
         "https://github.com/"*|"https://www.github.com/"*) echo "$(echo $choice | sed 's|/$||')" > $MODDIR/tmpi; choice="$choice/archive/master.zip"
                                                            wget --no-check-certificate -q --spider $choice 2>/dev/null && break || echo "URL doesn't exist! Try again";;
         *) echo "Invalid option! Try again";;
@@ -124,15 +119,21 @@ install_module(){
   # Install mod
   magisk --install-module $ZIPFILE
   rm -f $ZIPFILE
-  mv -f $MODDIR/tmpi $MOUNTPATH\_update/$modname/module_manager
+  mv -f $MODDIR/tmpi $MOUNTPATH\_update/$modname/module_manager 2>/dev/null
   $update && echo -e "\n$div\n$modname updated!" || echo -e "\n$div\n$modname installed!"
 }
 
 update_check() {
   clear
+  echo "0: None, go back to main menu\n1: All list modules" > $MODDIR/tmpu
+  local j=2
+  for i in $(ls $MOUNTPATH 2>/dev/null); do
+    if grep -q "$i" $MODDIR/tmpr || [ -f $MOUNTPATH/$i/module_manager ]; then
+      echo "$j: $i" >> $MODDIR/tmpu
+      j=$((j+1))
+    fi
+  done
   while true; do
-    echo -e "0: None, go back to main menu\n1: All list modules" > $MODDIR/tmpu
-    ls $MOUNTPATH/*/module_manager 2>/dev/null | rev | cut -d / -f2 | rev | awk '{print FNR + 1 ": " $1 " " $2}' >> $MODDIR/tmpu
     echo "$div"
     echo "Update which module?"
     echo "$div"
@@ -151,10 +152,10 @@ update_check() {
     done
     for ichoice in $choice; do
       local mod="$(grep -w "$ichoice:" $MODDIR/tmpu | awk '{print $2}')"
-      local modurl="$(cat $MOUNTPATH/$mod/module_manager)"
-      wget --no-check-certificate -qO $MODDIR/tmpmrop $modurl/raw/master/module.prop 2>/dev/null
-      local new="$(grep_prop versionCode $MODDIR/tmpmrop)" old="$(grep_prop versionCode $MOUNTPATH/$mod/module.prop)"
-      rm -f $MODDIR/tmpmrop
+      [ -f $MOUNTPATH/$mod/module_manager ] && local modurl="$(cat $MOUNTPATH/$mod/module_manager)" || local modurl="https://github.com/Magisk-Modules-Repo/$mod"
+      wget --no-check-certificate -qO $MODDIR/tmprop $modurl/raw/master/module.prop 2>/dev/null
+      local new="$(grep_prop versionCode $MODDIR/tmprop)" old="$(grep_prop versionCode $MOUNTPATH/$mod/module.prop)"
+      rm -f $MODDIR/tmprop
       if [ $new -gt $old ]; then
         touch $MOUNTPATH/$mod/update
         install_module "$modurl" "$mod"
@@ -169,6 +170,12 @@ update_check() {
 
 mod_head
 test_connection || quit "No network connection! Aborting!"
+(
+echo "Downloading repo info..." & e_spinner
+wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' > $MODDIR/tmpr
+wget --no-check-certificate -qO - "https://api.github.com/orgs/Magisk-Modules-Repo/repos?sort=full_name&per_page=100&page=2" | grep '"full_name":' | sed -r 's|.*/(.*)",|\1|g' >> $MODDIR/tmpr
+) & e_spinner
+echo ""
 while true; do
   echo "$div"
   echo "Choose option:"
