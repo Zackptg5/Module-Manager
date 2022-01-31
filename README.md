@@ -2,7 +2,7 @@
 
 Terminal script to manage your magisk modules
 
-Note that this is only for magisk canary builds (newer than v23)
+Note that this is only for magisk canary builds > v23 and < 24 beta
 Temporary workaround until custom repo support is added to magisk manager canary
 
 ### Usage
