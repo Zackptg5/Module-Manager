@@ -11,6 +11,9 @@ su
 module_manager
 ```
 
+### Download
+See [my website](https://zackptg5.com/android.php#mm)
+
 ### Changelog
 * v1.0 - 11/16/21
   * Initial Release
